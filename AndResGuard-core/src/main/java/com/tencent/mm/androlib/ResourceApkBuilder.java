@@ -1,21 +1,30 @@
 package com.tencent.mm.androlib;
 
+import apksigner.ApkSignerTool;
 import com.tencent.mm.resourceproguard.Configuration;
 import com.tencent.mm.util.FileOperation;
 import com.tencent.mm.util.TypedValue;
 import com.tencent.mm.util.Utils;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.LineNumberReader;
+import java.security.Key;
+import java.security.KeyStore;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 
 /**
  * @author shwenzhang
- */
+ * modified:
+ * @author jonychina162
+ *         为了使用v2签名，引入了google v2sign 模块
+ *         由于使用v2签名，会对整个包除了签名块验证完整性，即除了签名块的内容在签名之后包其他内容不允许再改动，因此修改了原有的签名逻辑，
+ *         现有逻辑：1 zipalign 2.sign 。具体请参考buildApkV2sign
+  */
 public class ResourceApkBuilder {
 
     private final Configuration config;
@@ -35,27 +44,44 @@ public class ResourceApkBuilder {
         this.config = config;
     }
 
-    public void setOutDir(File outDir, String apkname) throws AndrolibException {
+    public void setOutDir(File outDir, String apkName) throws AndrolibException {
         mOutDir = outDir;
-        mApkName = apkname;
+        mApkName = apkName;
     }
 
-    public void buildApk(HashMap<String, Integer> compressData) throws IOException, InterruptedException {
-        insureFileName();
+    public void buildApkV1sign(HashMap<String, Integer> compressData) throws IOException, InterruptedException {
+        insureFileNameV1();
         generalUnsignApk(compressData);
-        signApk();
+        signApkV1(mUnSignedApk , mSignedApk);
         use7zApk(compressData);
-        alignApk();
+        alignApks();
     }
 
-    private void insureFileName() {
+    public void buildApkV2sign(HashMap<String, Integer> compressData) throws Exception {
+        insureFileNameV2();
+        generalUnsignApk(compressData);
+        /*
+         * Caution: If you sign your app using APK Signature Scheme v2 and make further changes to the app,
+         * the app's signature is invalidated.
+         * For this reason, use tools such as zipalign before signing your app using APK Signature Scheme v2, not after.
+         */
+        alignApk(mUnSignedApk, mAlignedApk);
+        signApkV2(mAlignedApk, mSignedApk);
+    }
+
+    private void insureFileNameV1() {
         mUnSignedApk = new File(mOutDir.getAbsolutePath(), mApkName + "_unsigned.apk");
-        //需要自己安装7zip
         mSignedWith7ZipApk = new File(mOutDir.getAbsolutePath(), mApkName + "_signed_7zip.apk");
         mSignedApk = new File(mOutDir.getAbsolutePath(), mApkName + "_signed.apk");
         mAlignedApk = new File(mOutDir.getAbsolutePath(), mApkName + "_signed_aligned.apk");
         mAlignedWith7ZipApk = new File(mOutDir.getAbsolutePath(), mApkName + "_signed_7zip_aligned.apk");
         m7zipOutPutDir = new File(mOutDir.getAbsolutePath(), TypedValue.OUT_7ZIP_FILE_PATH);
+    }
+
+    private void insureFileNameV2() {
+        mUnSignedApk = new File(mOutDir.getAbsolutePath(), mApkName + "_unsigned.apk");
+        mAlignedApk = new File(mOutDir.getAbsolutePath(), mApkName + "_aligned_unsigned.apk");
+        mSignedApk = new File(mOutDir.getAbsolutePath(), mApkName + "_aligned_signed.apk");
     }
 
     private void use7zApk(HashMap<String, Integer> compressData) throws IOException, InterruptedException {
@@ -97,54 +123,110 @@ public class ResourceApkBuilder {
         }
     }
 
-    private void signApk() throws IOException, InterruptedException {
-        //尝试去对apk签名
-        if (config.mUseSignAPk) {
-            System.out.printf("signing apk: %s\n", mSignedApk.getName());
-            if (mSignedApk.exists()) {
-                mSignedApk.delete();
-            }
-            String[] argv = {
-                "jarsigner", "-sigalg", "MD5withRSA",
-                "-digestalg", "SHA1",
-                "-keystore", config.mSignatureFile.getAbsolutePath(),
-                "-storepass", config.mStorePass,
-                "-keypass", config.mKeyPass,
-                "-signedjar", mSignedApk.getAbsolutePath(),
-                mUnSignedApk.getAbsolutePath(),
-                config.mStoreAlias
-            };
-            Process pro = null;
-            try {
-                pro = Runtime.getRuntime().exec(argv);
-                //destroy the stream
-                pro.waitFor();
-            } finally {
-                if (pro != null) {
-                    pro.destroy();
-                }
-            }
+    private String getSignatureAlgorithm() throws Exception {
+        KeyStore keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+        FileInputStream fileIn = new FileInputStream(config.mSignatureFile);
+        keyStore.load(fileIn, config.mStorePass.toCharArray());
+        Key key = keyStore.getKey(config.mStoreAlias, config.mKeyPass.toCharArray());
+        if (key == null) {
+            throw new RuntimeException(
+                "Can't get private key, please check if storepass storealias and keypass are correct"
+            );
+        }
+        String keyAlgorithm = key.getAlgorithm();
+        String signatureAlgorithm;
+        if (keyAlgorithm.equalsIgnoreCase("DSA")) {
+            signatureAlgorithm = "SHA1withDSA";
+        } else if (keyAlgorithm.equalsIgnoreCase("RSA")) {
+            signatureAlgorithm = "SHA1withRSA";
+        } else if (keyAlgorithm.equalsIgnoreCase("EC")) {
+            signatureAlgorithm = "SHA1withECDSA";
+        } else {
+            throw new RuntimeException("private key is not a DSA or RSA key");
+        }
+        System.out.printf("signature Algorithm is: %s\n", signatureAlgorithm);
+        return signatureAlgorithm;
+    }
 
-            if (!mSignedApk.exists()) {
-                throw new IOException("Can't Generate signed APK. Plz check your sign info is correct.");
+    private void signApkV1(File unSignedApk, File signedApk) throws IOException, InterruptedException {
+        if (config.mUseSignAPk) {
+            System.out.printf("signing apk: %s\n", signedApk.getName());
+            if (signedApk.exists()) {
+                signedApk.delete();
+            }
+            signWithV1sign(unSignedApk, signedApk);
+            if (!signedApk.exists()) {
+                throw new IOException("Can't Generate signed APK. Plz check your v1sign info is correct.");
             }
         }
     }
 
-    private void alignApk() throws IOException, InterruptedException {
+    private void signApkV2(File unSignedApk, File signedApk) throws Exception {
+        if (config.mUseSignAPk) {
+            System.out.printf("signing apk: %s\n", signedApk.getName());
+            signWithV2sign(unSignedApk, signedApk);
+            if (!signedApk.exists()) {
+                throw new IOException("Can't Generate signed APK v2. Plz check your v2sign info is correct.");
+            }
+        }
+    }
+
+    private void signWithV2sign(File unSignedApk, File signedApk) throws Exception {
+        String[] params = new String[]{
+            "sign",
+            "--ks", config.mSignatureFile.getAbsolutePath(),
+            "--ks-pass",
+            "pass:" + config.mKeyPass,
+            "--ks-key-alias", config.mStoreAlias,
+            "--out", signedApk.getAbsolutePath(),
+            unSignedApk.getAbsolutePath()
+        };
+        ApkSignerTool.main(params);
+    }
+
+    private void signWithV1sign(File unSignedApk, File signedApk) throws IOException, InterruptedException {
+        String signatureAlgorithm = "MD5withRSA";
+        try {
+            signatureAlgorithm = getSignatureAlgorithm();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        String[] argv = {
+            "jarsigner",
+            "-sigalg", signatureAlgorithm,
+            "-digestalg", "SHA1",
+            "-keystore", config.mSignatureFile.getAbsolutePath(),
+            "-storepass", config.mStorePass,
+            "-keypass", config.mKeyPass,
+            "-signedjar", signedApk.getAbsolutePath(),
+            unSignedApk.getAbsolutePath(),
+            config.mStoreAlias
+        };
+        Process pro = null;
+        try {
+            pro = Runtime.getRuntime().exec(argv);
+            //destroy the stream
+            pro.waitFor();
+        } finally {
+            if (pro != null) {
+                pro.destroy();
+            }
+        }
+    }
+
+    private void alignApks() throws IOException, InterruptedException {
         //如果不签名就肯定不需要对齐了
         if (!config.mUseSignAPk) {
             return;
         }
-        if (mSignedWith7ZipApk.exists()) {
-            if (mSignedApk.exists()) {
-                alignApk(mSignedApk, mAlignedApk);
-            }
-            alignApk(mSignedWith7ZipApk, mAlignedWith7ZipApk);
-        } else if (mSignedApk.exists()) {
+        if (!mSignedApk.exists() && !mSignedWith7ZipApk.exists()) {
+            throw new IOException("Can not found any signed apk file");
+        }
+        if (mSignedApk.exists()) {
             alignApk(mSignedApk, mAlignedApk);
-        } else {
-            throw new IOException("can not found any signed apk file");
+        }
+        if (mSignedWith7ZipApk.exists()) {
+            alignApk(mSignedWith7ZipApk, mAlignedWith7ZipApk);
         }
     }
 

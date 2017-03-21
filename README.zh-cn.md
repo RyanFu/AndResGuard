@@ -23,15 +23,18 @@ buildscript {
         jcenter()
     }
     dependencies {
-        classpath 'com.tencent.mm:AndResGuard-gradle-plugin:1.1.11'
+        classpath 'com.tencent.mm:AndResGuard-gradle-plugin:1.2.0'
     }
 }
 
 
 andResGuard {
+    // mappingFile = file("./resource_mapping.txt")
     mappingFile = null
+    // 当你使用v2签名的时候，7zip压缩是无法生效的。
     use7zip = true
     useSign = true
+    // 打开这个开关，会keep住所有资源的原始路径，只混淆资源的名字
     keepRoot = false
     whiteList = [
         // for your icon
@@ -53,7 +56,7 @@ andResGuard {
         "R.style.umeng*",
         "R.id.umeng*",
         // umeng share for sina
-        "R.drawable.sina*"
+        "R.drawable.sina*",
         // for google-services.json
         "R.string.google_app_id",
         "R.string.gcm_defaultSenderId",
@@ -61,7 +64,16 @@ andResGuard {
         "R.string.ga_trackingId",
         "R.string.firebase_database_url",
         "R.string.google_api_key",
-        "R.string.google_crash_reporting_api_key"
+        "R.string.google_crash_reporting_api_key",
+        // umeng share for facebook
+        "R.layout.*facebook*",
+        "R.id.*facebook*",
+        // umeng share for messager
+        "R.layout.*messager*",
+        "R.id.*messager*",
+        // umeng share commond
+        "R.id.progress_bar_parent",
+        "R.id.webView"
     ]
     compressFilePattern = [
         "*.png",
@@ -71,17 +83,38 @@ andResGuard {
         "resources.arsc"
     ]
      sevenzip {
-         artifact = 'com.tencent.mm:SevenZip:1.1.11'
+         artifact = 'com.tencent.mm:SevenZip:1.2.0'
          //path = "/usr/local/bin/7za"
     }
 }
 ```
 
-运行`andresguard/resguard`的gradle任务，可以得到资源混淆的安装包
-命令行可直接运行```./gradlew resguard```
+使用Android Studio的同学可以再 `andresguard` 下找到相关的构建任务;
+命令行可直接运行```./gradlew resguard[BuildType | Flavor]```， 这里的任务命令规则和assemble一致。
+
 
 在设置`sevenzip`时, 你只需设置`artifact`或`path`. 支持同时设置,总以path的值为优先.
 
 最终的混淆APK会生成在`{App}/build/output/apk/AndResGuard_{apk_name}/{apk_name}_signed_7zip_aligned.apk`。
-    
-点击查看[更多细节和命令行使用方法](doc/how_to_work.zh-cn.md)
+
+**请使用Umeng_social_sdk的同学特别留意将资源加入白名单，否则会出现Crash。也欢迎大家PR自己的白名单**
+
+白名单机制只作用于资源的specsName，不会keep住资源的路径。如果想keep住资源原有的物理路径，可以使用`mappingFile`。
+例如我想keep住icon所有folder，可以在mappingFile指向的文件添加：
+
+```
+res path mapping:
+    res/mipmap-hdpi-v4 -> res/mipmap-hdpi-v4
+    res/mipmap-mdpi-v4 -> res/mipmap-mdpi-v4
+    res/mipmap-xhdpi-v4 -> res/mipmap-xhdpi-v4
+    res/mipmap-xxhdpi-v4 -> res/mipmap-xxhdpi-v4
+    res/mipmap-xxxhdpi-v4 -> res/mipmap-xxxhdpi-v4
+```
+
+[点击查看更多细节和命令行使用方法](doc/how_to_work.zh-cn.md)
+
+## 致谢
+
+[Apktool](https://github.com/iBotPeaches/Apktool) 使用了Apktool资源解码部分的代码
+
+[v2sig](https://github.com/shwenzhang/AndResGuard/pull/133) @jonyChina162

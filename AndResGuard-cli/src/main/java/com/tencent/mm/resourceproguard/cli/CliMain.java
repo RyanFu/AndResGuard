@@ -2,6 +2,7 @@ package com.tencent.mm.resourceproguard.cli;
 
 import com.tencent.mm.androlib.ResourceRepackage;
 import com.tencent.mm.resourceproguard.Configuration;
+import com.tencent.mm.resourceproguard.InputParam;
 import com.tencent.mm.resourceproguard.Main;
 import com.tencent.mm.util.TypedValue;
 
@@ -189,10 +190,10 @@ public class CliMain extends Main {
             }
             return;
         }
-        System.out.printf("resourceprpguard begin\n");
-        resourceProguard(outputFile, apkFileName);
-        System.out.printf("resources proguard done, total time cost: %fs\n", diffTimeFromBegin());
-        System.out.printf("resources proguard done, you can go to file to find the output %s\n", mOutDir.getAbsolutePath());
+        System.out.printf("[AndResGuard] begin: %s, %s\n", outputFile, apkFileName);
+        resourceProguard(outputFile, apkFileName, InputParam.SignatureType.SchemaV1);
+        System.out.printf("[AndResGuard] done, total time cost: %fs\n", diffTimeFromBegin());
+        System.out.printf("[AndResGuard] done, you can go to file to find the output %s\n", mOutDir.getAbsolutePath());
         clean();
     }
 

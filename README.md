@@ -6,23 +6,23 @@
 
 *Read this in other languages: [English](README.md), [简体中文](README.zh-cn.md).*
 
-AndResGuard is a tooling for reducing your apk size, it works like ProGuard for Java source code, but only aim at resource files. It change res/drawable/wechat to r/d/a, and rename the resource file wechat.png to a.png. Finally, it repackages the apk with 7zip, which can reduce the package size obviously.
+`AndResGuard` is a tooling for reducing your apk size, it works like the `ProGuard` for Java source code, but only aim at the resource files. It changes `res/drawable/wechat` to `r/d/a`, and renames the resource file `wechat.png` to `a.png`. Finally, it repackages the apk with 7zip, which can reduce the package size obviously.
 
-AndResGuard is fast, and it does not need the source codes. Input a Android apk, then we can get a 'ResGuard' apk in a few seconds.
+`AndResGuard` is fast, and it does **NOT** need the source codes. Input an Android apk, then we can get a 'ResGuard' apk in a few seconds.
 
-Some uses of AndResGuard are:
+Some uses of `AndResGuard` are:
 
-1. Obfuscate android resources, it contain all the resource type(such as drawable、layout、string...). It can prevent your apk reversed by Apktool.
+1. Obfuscate android resources. It contains all the resource type(such as drawable、layout、string...). It can prevent your apk from being reversed by `Apktool`.
 
-2. Shrinking the apk size, it can reduce the resources.arsc and the package size obviously.
+2. Shrinking the apk size. It can reduce the `resources.arsc` and the package size obviously.
 
-3. Repackage with 7zip, it support repackage apk with 7zip, and we can specify the compression method for each file.
+3. Repackage with `7zip`. It supports repackage apk with `7zip`, and we can specify the compression method for each file.
 
-AndResGuard is a command-line tool, it supports Window、Linux and Mac. We suggest you to use 7zip in Linux or Mac platform for a higher compression ratio.
+`AndResGuard` is a command-line tool, it supports Windows, Linux and Mac. We suggest you to use 7zip in Linux or Mac platform for a higher compression ratio.
 
 ## How to use
 ### With Gradle
-This has been released on Bintray
+This has been released on `Bintray`
 ```gradle
 apply plugin: 'AndResGuard'
 
@@ -31,14 +31,17 @@ buildscript {
         jcenter()
     }
     dependencies {
-        classpath 'com.tencent.mm:AndResGuard-gradle-plugin:1.1.11'
+        classpath 'com.tencent.mm:AndResGuard-gradle-plugin:1.2.0'
     }
 }
 
 andResGuard {
+    // mappingFile = file("./resource_mapping.txt")
     mappingFile = null
+    // It will be invalid when you sign apk with schemaV2
     use7zip = true
     useSign = true
+    // it will keep the origin path of your resources when it's true
     keepRoot = false
     whiteList = [
         // your icon
@@ -60,7 +63,7 @@ andResGuard {
         "R.style.umeng*",
         "R.id.umeng*",
         // umeng share for sina
-        "R.drawable.sina*"
+        "R.drawable.sina*",
         // for google-services.json
         "R.string.google_app_id",
         "R.string.gcm_defaultSenderId",
@@ -78,19 +81,23 @@ andResGuard {
         "resources.arsc"
     ]
     sevenzip {
-        artifact = 'com.tencent.mm:SevenZip:1.1.11'
+        artifact = 'com.tencent.mm:SevenZip:1.2.0'
         //path = "/usr/local/bin/7za"
     }
 }
 ```
 
-Run `andresguard/resguard` task to generate compressed APK. This can be done in two ways:
- 
-If you are using AndroidStudio, you can find the generate task option in ```andresguard``` group.
-Or alternatively, you run ```./gradlew resguard``` in your terminal.
+If you are using `Android Studio`, you can find the generate task option in ```andresguard``` group.
+Or alternatively, you run ```./gradlew resguard[BuildType | Flavor]``` in your terminal. The format of task name is as same as `assemble`.
 
-The sevenzip can be set by 'path' or 'artifact'. Mutiple assignments are allowed, but the winner always is `path`.
+The sevenzip can be set by `path` or `artifact`. Mutiple assignments are allowed, but the winner is **always** `path`.
 
-The output apk will be stored in `{App}/build/output/apk/AndResGuard_{apk_name}/{apk_name}_signed_7zip_aligned.apk`
-   
-Looking for [more detail](doc/how_to_work.md)
+The outputted apk will be stored in `{App}/build/output/apk/AndResGuard_{apk_name}/{apk_name}_signed_7zip_aligned.apk`.
+
+[Looking for more detail](doc/how_to_work.md)
+
+## Thanks
+
+[Apktool](https://github.com/iBotPeaches/Apktool) Connor Tumbleson
+
+[v2sig](https://github.com/shwenzhang/AndResGuard/pull/133) @jonyChina162 

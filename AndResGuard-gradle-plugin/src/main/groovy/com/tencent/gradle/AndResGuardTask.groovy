@@ -4,6 +4,7 @@ import com.tencent.mm.resourceproguard.InputParam
 import com.tencent.mm.resourceproguard.Main
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
+import org.gradle.api.Task
 import org.gradle.api.tasks.TaskAction
 
 /**
@@ -11,37 +12,46 @@ import org.gradle.api.tasks.TaskAction
  *
  * @author Sim Sun (sunsj1231@gmail.com)
  */
-public class AndResGuardSchemaTask extends DefaultTask {
-    def AndResGuardExtension configuration
+class AndResGuardTask extends DefaultTask {
+    AndResGuardExtension configuration
     def android
     def buildConfigs = []
 
-    AndResGuardSchemaTask() {
+    AndResGuardTask() {
         description = 'Assemble Resource Proguard APK'
         group = 'andresguard'
         outputs.upToDateWhen { false }
-        project.afterEvaluate {
-            configuration = project.andResGuard
-            android = project.extensions.android
-            android.applicationVariants.all { variant ->
-                if (variant.buildType.name == 'release') {
-                    this.dependsOn variant.assemble
-                    variant.outputs.each { output ->
-                        buildConfigs << new BuildInfo(
-                                output.outputFile,
-                                variant.apkVariantData.variantConfiguration.signingConfig,
-                                variant.apkVariantData.variantConfiguration.applicationId
-                        )
-                    }
+        android = project.extensions.android
+        configuration = project.andResGuard
+        android.applicationVariants.all { variant ->
+            variant.outputs.each { output ->
+                // remove "resguard"
+                String variantName = this.name["resguard".length()..-1]
+                if (variantName.equalsIgnoreCase(variant.buildType.name as String)
+                    || isTargetFlavor(variantName, variant.productFlavors, variant.buildType.name)
+                ) {
+                    buildConfigs << new BuildInfo(
+                            output.outputFile,
+                            variant.apkVariantData.variantConfiguration.signingConfig,
+                            variant.apkVariantData.variantConfiguration.applicationId
+                    )
                 }
             }
-            if (!project.plugins.hasPlugin('com.android.application')) {
-                throw new GradleException('generateARGApk: Android Application plugin required')
-            }
+        }
+        if (!project.plugins.hasPlugin('com.android.application')) {
+            throw new GradleException('generateARGApk: Android Application plugin required')
         }
     }
 
-    static def useFolder(file) {
+    static isTargetFlavor(variantName, flavors, buildType) {
+        if (flavors.size() > 0) {
+            String flavor = flavors.get(0).name
+            return variantName.equalsIgnoreCase(flavor) || variantName.equalsIgnoreCase([flavor, buildType].join(""))
+        }
+        return false
+    }
+
+    static useFolder(file) {
         //remove .apk from filename
         def fileName = file.name[0..-5]
         return "${file.parent}/AndResGuard_${fileName}/"
@@ -52,16 +62,17 @@ public class AndResGuardSchemaTask extends DefaultTask {
     }
 
     @TaskAction
-    def resuguard() {
-        project.logger.info("[AndResGuard]zipaligin: path: " + getZipAlignPath())
-        project.logger.info("[AndResGuard]configuartion:$configuration")
-        def ExecutorExtension sevenzip = project.extensions.findByName("sevenzip") as ExecutorExtension
+    run() {
+        project.logger.info("[AndResGuard] configuartion:$configuration")
+        project.logger.info("[AndResGuard] BuildConfigs:$buildConfigs")
+
+        ExecutorExtension sevenzip = project.extensions.findByName("sevenzip") as ExecutorExtension
 
         buildConfigs.each { config ->
-            def String absPath = config.file.getAbsolutePath()
+            String absPath = config.file.getAbsolutePath()
             def signConfig = config.signConfig
-            def String packageName = config.packageName
-            ArrayList<String> whiteListFullName = new ArrayList<>();
+            String packageName = config.packageName
+            ArrayList<String> whiteListFullName = new ArrayList<>()
             configuration.whiteList.each { res ->
                 if (res.startsWith("R")) {
                     whiteListFullName.add(packageName + "." + res)
@@ -80,7 +91,7 @@ public class AndResGuardSchemaTask extends DefaultTask {
                     .setSevenZipPath(sevenzip.path)
                     .setOutBuilder(useFolder(config.file))
                     .setApkPath(absPath)
-                    .setUseSign(configuration.useSign);
+                    .setUseSign(configuration.useSign)
 
             if (configuration.useSign) {
                 if (signConfig == null) {
@@ -90,8 +101,11 @@ public class AndResGuardSchemaTask extends DefaultTask {
                         .setKeypass(signConfig.keyPassword)
                         .setStorealias(signConfig.keyAlias)
                         .setStorepass(signConfig.storePassword)
+                if (signConfig.v2SigningEnabled) {
+                    builder.setSignatureType(InputParam.SignatureType.SchemaV2);
+                }
             }
-            InputParam inputParam = builder.create();
+            InputParam inputParam = builder.create()
             Main.gradleRun(inputParam)
         }
     }
